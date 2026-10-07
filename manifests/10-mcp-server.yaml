@@ -1,0 +1,56 @@
+# castellan-ops MCP server. Deliberately does no authorization of its own.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: castellan-ops
+  namespace: castellan-tools
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: castellan-ops
+  namespace: castellan-tools
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: castellan-ops
+  template:
+    metadata:
+      labels:
+        app: castellan-ops
+    spec:
+      serviceAccountName: castellan-ops
+      containers:
+      - name: mcp
+        image: ${MCP_IMAGE}
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: PORT
+          value: "8000"
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8000
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: castellan-ops
+  namespace: castellan-tools
+  labels:
+    app: castellan-ops
+spec:
+  selector:
+    app: castellan-ops
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8000
+    appProtocol: http

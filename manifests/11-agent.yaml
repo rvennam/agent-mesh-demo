@@ -1,0 +1,104 @@
+# castellan-assistant: the chat agent. Its SPIFFE ID is
+# spiffe://<CLUSTER_NAME>/ns/castellan-agents/sa/castellan-assistant
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: castellan-assistant
+  namespace: castellan-agents
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: castellan-assistant
+  namespace: castellan-agents
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: castellan-assistant
+  template:
+    metadata:
+      labels:
+        app: castellan-assistant
+    spec:
+      serviceAccountName: castellan-assistant
+      containers:
+      - name: agent
+        image: ${AGENT_IMAGE}
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: AGENT_NAME
+          value: castellan-assistant
+        - name: TRUST_DOMAIN       # Istio meshConfig.trustDomain; shown in the SPIFFE ID on the identity card
+          value: ${CLUSTER_NAME}
+        - name: POD_NAMESPACE
+          valueFrom: { fieldRef: { fieldPath: metadata.namespace } }
+        - name: SERVICE_ACCOUNT
+          valueFrom: { fieldRef: { fieldPath: spec.serviceAccountName } }
+        # Header in which the ingress hands us the user's Entra token (set by the ingress OIDC policy).
+        - name: USER_TOKEN_HEADER
+          value: "x-user-access-token"
+        # agentgateway STS (RFC 8693). The agent presents its projected SA token as actor_token.
+        - name: STS_WELL_KNOWN_URL
+          value: "http://enterprise-agentgateway.agentgateway-system.svc.cluster.local:7777/.well-known/openid-configuration"
+        - name: ACTOR_TOKEN_PATH
+          value: /var/run/secrets/tokens/sts-actor
+        # LLM egress goes to a virtual hostname owned by the waypoint (ServiceEntry). No API key here.
+        - name: LLM_BASE_URL
+          value: "http://llm.castellan.internal/openai/v1"
+        - name: LLM_MODEL
+          value: gpt-4o-mini
+        # MCP server, reached through the waypoint in front of the castellan-tools namespace.
+        - name: MCP_URL
+          value: "http://castellan-ops.castellan-tools.svc.cluster.local/mcp"
+        # one task is delegated to a specialist agent: the assistant calls it with ITS OWN delegated token
+        - name: DELEGATE_URL
+          value: "http://castellan-clearance.castellan-agents.svc.cluster.local"
+        - name: DELEGATE_NAME
+          value: castellan-clearance
+        - name: DELEGATE_TASK
+          value: "security clearance lookups (anything about an employee's clearance status)"
+        - name: DELEGATE_TOOL
+          value: ask_clearance_specialist
+        # sign out = end the Keycloak SSO session, then land on the ingress /logout which clears its session
+        - name: LOGOUT_URL
+          value: "http://localhost:8180/realms/castellan/protocol/openid-connect/logout?client_id=castellan-assistant&post_logout_redirect_uri=http%3A%2F%2Flocalhost%3A8080%2Flogout"
+        volumeMounts:
+        - name: sts-actor
+          mountPath: /var/run/secrets/tokens
+          readOnly: true
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+      volumes:
+      # Short-lived projected token (API-server audience, what the STS k8s validator accepts): this is the agent's proof of workload
+      # identity to the STS (validated with TokenReview by the k8s actor validator).
+      - name: sts-actor
+        projected:
+          sources:
+          - serviceAccountToken:
+              path: sts-actor
+              expirationSeconds: 3600
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: castellan-assistant
+  namespace: castellan-agents
+  labels:
+    app: castellan-assistant
+spec:
+  selector:
+    app: castellan-assistant
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
+    appProtocol: http

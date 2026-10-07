@@ -1,0 +1,21 @@
+# Per-agent LLM token budget (kubectl alternative to creating it in the Solo UI). Enforcement policy: 60-llm-budget-enforcement.yaml.
+# The built-in `user` budget dimension coalesces identity sources and falls back to the mesh
+# identity  source.identity.namespace + "/" + source.identity.serviceAccount  when there is no
+# JWT or API key on the LLM call. So the budget subject IS the agent's SPIFFE identity.
+# Small limit so it trips live on stage (about two chat turns); real deployments use Month windows and USD.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBudget
+metadata:
+  name: castellan-assistant-budget
+  namespace: castellan-tools
+spec:
+  budgets:
+  - name: castellan-assistant-daily-tokens
+    subject:
+      user: castellan-agents/castellan-assistant
+    limit:
+      unit: Tokens
+      amount: 2000
+    window:
+      unit: Day
+    onBudgetExceeded: Block

@@ -1,0 +1,18 @@
+# Who may call whom. The clearance specialist accepts calls only from the assistant's workload identity.
+# Enforced at the agents' waypoint on the mTLS peer certificate; the specialist has no idea.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: clearance-callers
+  namespace: castellan-agents
+spec:
+  targetRefs:
+  - group: ""
+    kind: Service
+    name: castellan-clearance
+  traffic:
+    authorization:
+      action: Allow
+      policy:
+        matchExpressions:
+        - 'source.identity.namespace == "castellan-agents" && source.identity.serviceAccount == "castellan-assistant"'

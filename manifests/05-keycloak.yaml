@@ -1,0 +1,193 @@
+# Keycloak: the enterprise IdP stand-in. Realm imported at start (idempotent, no admin API calls).
+#   realm  castellan
+#   client castellan-assistant (confidential; redirect http://localhost:8080/callback)
+#   roles  mcp.reader, mcp.admin  -> emitted as the `roles` claim in access and ID tokens
+#   authorized_agents -> [castellan-assistant, castellan-clearance]: the agents this realm's users authorize to act for them.
+#   (An ordinary claim rather than RFC 8693 may_act, so it survives the ingress rescoping hop; enforced at the waypoint.)
+#   users  avery.analyst (mcp.reader), morgan.admin (mcp.admin)
+# Hostname split: the browser uses http://localhost:8180 (port-forward); the ingress and the STS use
+# the in-cluster Service. KC_HOSTNAME_BACKCHANNEL_DYNAMIC lets one realm serve both.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: castellan-idp
+  labels:
+    istio.io/dataplane-mode: ambient
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-realm
+  namespace: castellan-idp
+data:
+  castellan-realm.json: |
+    {
+      "realm": "castellan",
+      "enabled": true,
+      "displayName": "Castellan Defense Solutions",
+      "displayNameHtml": "<div style=\"font-family:sans-serif\"><b>CASTELLAN</b> Defense Solutions<br/><span style=\"font-size:12px;color:#8b98a5\">Zero Trust Programme · Agent Access</span></div>",
+      "sslRequired": "none",
+      "accessTokenLifespan": 3600,
+      "roles": {
+        "realm": [
+          { "name": "mcp.reader", "description": "May use read-only Castellan MCP tools" },
+          { "name": "mcp.admin",  "description": "May use all Castellan MCP tools, including write and destructive" }
+        ]
+      },
+      "clients": [
+        {
+          "clientId": "castellan-assistant",
+          "name": "Castellan Assistant",
+          "enabled": true,
+          "publicClient": false,
+          "secret": "castellan-assistant-secret",
+          "protocol": "openid-connect",
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": true,
+          "redirectUris": [ "http://localhost:8080/*" ],
+          "webOrigins": [ "http://localhost:8080" ],
+          "attributes": { "post.logout.redirect.uris": "+" },
+          "defaultClientScopes": [ "basic", "openid", "profile", "email", "roles", "web-origins" ],
+          "protocolMappers": [
+            {
+              "name": "authorized_agents: the agents this user authorizes to act for them",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-hardcoded-claim-mapper",
+              "consentRequired": false,
+              "config": {
+                "claim.name": "authorized_agents",
+                "claim.value": "[\"system:serviceaccount:castellan-agents:castellan-assistant\",\"system:serviceaccount:castellan-agents:castellan-clearance\"]",
+                "jsonType.label": "JSON",
+                "access.token.claim": "true",
+                "id.token.claim": "true",
+                "userinfo.token.claim": "false"
+              }
+            },
+            {
+              "name": "realm roles as roles claim",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-usermodel-realm-role-mapper",
+              "consentRequired": false,
+              "config": {
+                "claim.name": "roles",
+                "jsonType.label": "String",
+                "multivalued": "true",
+                "access.token.claim": "true",
+                "id.token.claim": "true",
+                "userinfo.token.claim": "true"
+              }
+            },
+            {
+              "name": "audience castellan-assistant",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper",
+              "consentRequired": false,
+              "config": {
+                "included.client.audience": "castellan-assistant",
+                "access.token.claim": "true",
+                "id.token.claim": "false"
+              }
+            }
+          ]
+        }
+      ],
+      "users": [
+        {
+          "username": "avery.analyst",
+          "enabled": true,
+          "email": "avery.analyst@castellan.example",
+          "emailVerified": true,
+          "firstName": "Avery",
+          "lastName": "Analyst",
+          "credentials": [ { "type": "password", "value": "Castellan-Demo-2026", "temporary": false } ],
+          "realmRoles": [ "mcp.reader", "default-roles-castellan" ]
+        },
+        {
+          "username": "morgan.admin",
+          "enabled": true,
+          "email": "morgan.admin@castellan.example",
+          "emailVerified": true,
+          "firstName": "Morgan",
+          "lastName": "Admin",
+          "credentials": [ { "type": "password", "value": "Castellan-Demo-2026", "temporary": false } ],
+          "realmRoles": [ "mcp.admin", "default-roles-castellan" ]
+        }
+      ]
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: castellan-idp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+    spec:
+      containers:
+      - name: keycloak
+        image: quay.io/keycloak/keycloak:26.3
+        args: ["start-dev", "--import-realm"]
+        env:
+        - name: KC_BOOTSTRAP_ADMIN_USERNAME
+          value: admin
+        - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+          value: admin
+        # Frontend (browser-facing) URL. Issuer becomes http://localhost:8180/realms/castellan.
+        - name: KC_HOSTNAME
+          value: http://localhost:8180
+        # Backchannel (token, jwks, userinfo) URLs follow whatever host the caller used, so in-cluster
+        # callers (ingress ext-auth, STS) get in-cluster URLs from discovery.
+        - name: KC_HOSTNAME_BACKCHANNEL_DYNAMIC
+          value: "true"
+        - name: KC_HTTP_ENABLED
+          value: "true"
+        - name: KC_PROXY_HEADERS
+          value: xforwarded
+        - name: KC_HEALTH_ENABLED
+          value: "true"
+        ports:
+        - containerPort: 8080
+          name: http
+        - containerPort: 9000
+          name: mgmt
+        volumeMounts:
+        - name: realm
+          mountPath: /opt/keycloak/data/import
+          readOnly: true
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 9000
+          initialDelaySeconds: 20
+          periodSeconds: 5
+        resources:
+          requests:
+            cpu: 250m
+            memory: 768Mi
+      volumes:
+      - name: realm
+        configMap:
+          name: keycloak-realm
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: castellan-idp
+  labels:
+    app: keycloak
+spec:
+  selector:
+    app: keycloak
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+    appProtocol: http

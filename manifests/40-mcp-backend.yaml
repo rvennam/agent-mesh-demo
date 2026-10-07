@@ -1,0 +1,44 @@
+# MCP-aware handling of castellan-ops at the waypoint.
+# Traffic to the castellan-ops Service is already intercepted by the waypoint (namespace label).
+# This HTTPRoute, attached to the Service, sends /mcp to an MCP backend so the waypoint parses
+# JSON-RPC (tools/list, tools/call) instead of treating it as opaque HTTP. That is what makes
+# per-tool authorization (50-mcp-tool-policy.yaml) possible.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: castellan-ops-mcp
+  namespace: castellan-tools
+spec:
+  mcp:
+    targets:
+    - name: castellan-ops
+      static:
+        backendRef:
+          name: castellan-ops
+        port: 80
+        path: /mcp
+        protocol: StreamableHTTP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: castellan-ops-mcp
+  namespace: castellan-tools
+spec:
+  parentRefs:
+  - group: ""
+    kind: Service
+    name: castellan-ops
+  rules:
+  - name: mcp
+    matches:
+    - path:
+        type: PathPrefix
+        value: /mcp
+    backendRefs:
+    - name: castellan-ops-mcp
+      group: enterpriseagentgateway.solo.io
+      kind: EnterpriseAgentgatewayBackend
+  - backendRefs:            # everything else (/healthz, /audit) goes straight to the pod
+    - name: castellan-ops
+      port: 80

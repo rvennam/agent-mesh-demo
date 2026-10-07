@@ -1,0 +1,79 @@
+# The human's corporate token never reaches an agent. On the way from the ingress to each agent, the
+# gateway exchanges it (RFC 8693, no actor) at the agentgateway STS for a token that is:
+#   - issued by the STS, not the IdP
+#   - scoped to ONE audience: the agent it is being sent to
+#   - carrying only the claims the STS is allowed to copy (roles, name, email, may_act ...)
+# If an agent leaks its copy, it is a short-lived token for one internal audience, not the user's
+# corporate credential. The agent then uses this token as the subject of its own delegation exchange;
+# the STS accepts its own tokens as subjects and chains them.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayBackend
+metadata:
+  name: agentgateway-sts
+  namespace: castellan-ingress
+spec:
+  static:
+    host: enterprise-agentgateway.agentgateway-system.svc.cluster.local
+    port: 7777
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: rescope-user-token
+  namespace: castellan-ingress
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: castellan-assistant
+  backend:
+    auth:
+      oauthTokenExchange:
+        backendRef:
+          group: enterpriseagentgateway.solo.io
+          kind: EnterpriseAgentgatewayBackend
+          name: agentgateway-sts
+        path: /oauth2/token
+        grantType: TokenExchange
+        subjectToken:
+          source:
+            header:
+              name: x-user-access-token
+          tokenType: Jwt
+        audiences:
+        - castellan-assistant
+        requestedTokenType: Jwt
+        location:
+          header:
+            name: x-user-access-token
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: rescope-user-token-shadow
+  namespace: castellan-ingress
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: shadow-assistant
+  backend:
+    auth:
+      oauthTokenExchange:
+        backendRef:
+          group: enterpriseagentgateway.solo.io
+          kind: EnterpriseAgentgatewayBackend
+          name: agentgateway-sts
+        path: /oauth2/token
+        grantType: TokenExchange
+        subjectToken:
+          source:
+            header:
+              name: x-user-access-token
+          tokenType: Jwt
+        audiences:
+        - shadow-assistant
+        requestedTokenType: Jwt
+        location:
+          header:
+            name: x-user-access-token

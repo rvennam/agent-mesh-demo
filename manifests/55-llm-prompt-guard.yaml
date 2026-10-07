@@ -1,0 +1,22 @@
+# Data guard on the LLM path: requests carrying a US Social Security Number never leave the mesh.
+# Enforced at the waypoint on the OpenAI backend; the agent has no idea it exists.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: llm-data-guard
+  namespace: castellan-tools
+spec:
+  targetRefs:
+  - group: agentgateway.dev
+    kind: AgentgatewayBackend
+    name: openai
+  backend:
+    ai:
+      promptGuard:
+        request:
+        - regex:
+            action: Reject
+            builtins:
+            - Ssn
+          response:
+            message: "Blocked by Castellan data guard: a Social Security Number cannot be sent to an external model."

@@ -1,0 +1,43 @@
+# Model cost catalog for the LLM path. The waypoint already prices every call from the catalog built into
+# the proxy; declaring the catalog here makes the prices visible (Solo UI: Cost Management > Model Cost
+# Catalog) and lets us override them. Rates are USD per 1M tokens. modelCatalog is honored only on
+# Gateway-level parameters, so the castellan-tools waypoint references these through infrastructure.parametersRef.
+#
+# DEMO PRICING: rates are deliberately ~3,000x the real OpenAI list prices (gpt-4o-mini is really $0.15 / $0.60)
+# so a handful of chat turns shows real dollars in Cost Management. Do not reuse these numbers.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: castellan-model-costs
+  namespace: castellan-tools
+data:
+  catalog.json: |
+    {
+      "providers": {
+        "openai": {
+          "models": {
+            "gpt-4o-mini": {
+              "rates": { "input": "500", "output": "2000", "cacheRead": "250" }
+            },
+            "gpt-4o-mini-2024-07-18": {
+              "rates": { "input": "500", "output": "2000", "cacheRead": "250" }
+            },
+            "gpt-4o": {
+              "rates": { "input": "5000", "output": "20000", "cacheRead": "2500" }
+            }
+          }
+        }
+      }
+    }
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayParameters
+metadata:
+  name: castellan-tools-waypoint-params
+  namespace: castellan-tools
+spec:
+  modelCatalog:
+    sources:
+    - configMap:
+        name: castellan-model-costs
+        key: catalog.json

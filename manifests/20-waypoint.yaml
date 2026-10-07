@@ -1,0 +1,21 @@
+# agentgateway as the waypoint for the castellan-tools namespace.
+# Same Istio control plane, same ztunnel, same identities. Only the L7 proxy differs.
+# Docs: https://docs.solo.io/istio/1.31.x/agentic-mesh/install/
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: agentgateway-waypoint
+  namespace: castellan-tools
+  labels:
+    istio.io/waypoint-for: all   # Services, ServiceEntries, WorkloadEntries
+spec:
+  gatewayClassName: enterprise-agentgateway-waypoint
+  infrastructure:
+    parametersRef:   # model cost catalog (31-model-catalog.yaml)
+      group: enterpriseagentgateway.solo.io
+      kind: EnterpriseAgentgatewayParameters
+      name: castellan-tools-waypoint-params
+  listeners:
+  - name: mesh
+    port: 15008
+    protocol: HBONE

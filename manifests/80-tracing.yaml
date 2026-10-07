@@ -1,0 +1,98 @@
+# Distributed tracing from both agentgateway data planes (waypoint and ingress) to the Solo UI's
+# OpenTelemetry collector. Every span carries the SPIFFE caller, the route, and for LLM/MCP calls the
+# GenAI semantic-convention attributes (model, tokens, cost, tool name). Installed by scripts/03-solo-ui.sh.
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: allow-tracing-to-collector
+  namespace: agentgateway-system
+spec:
+  from:
+  - group: enterpriseagentgateway.solo.io
+    kind: EnterpriseAgentgatewayPolicy
+    namespace: castellan-tools
+  - group: enterpriseagentgateway.solo.io
+    kind: EnterpriseAgentgatewayPolicy
+    namespace: castellan-ingress
+  - group: enterpriseagentgateway.solo.io
+    kind: EnterpriseAgentgatewayPolicy
+    namespace: castellan-agents
+  to:
+  - group: ""
+    kind: Service
+    name: solo-enterprise-telemetry-collector
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: tracing
+  namespace: castellan-tools
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    name: agentgateway-waypoint
+  frontend:
+    tracing:
+      backendRef:
+        name: solo-enterprise-telemetry-collector
+        namespace: agentgateway-system
+        kind: Service
+        port: 4317
+      protocol: GRPC
+      randomSampling: "true"
+      attributes:
+        add:
+        # who the human was and which agent acted, straight from the delegated token
+        - name: user.name
+          expression: 'has(jwt.preferred_username) ? jwt.preferred_username : ""'
+        - name: agent.actor
+          expression: 'has(jwt.act) ? jwt.act.sub : ""'
+        - name: agent.chain
+          expression: 'has(jwt.act) ? (has(jwt.act.act) ? jwt.act.act.sub + " > " + jwt.act.sub : jwt.act.sub) : ""'
+        # prompt and completion text on LLM spans, so a trace can be found by what was asked.
+        # (Costs a little per request on large prompts; fine for a demo, consider sampling in production.)
+        - name: gen_ai.prompt
+          expression: 'has(llm.prompt) ? llm.prompt.map(m, m.role + ": " + m.content).join("\n") : ""'
+        - name: gen_ai.completion
+          expression: 'has(llm.completion) ? llm.completion.join("\n") : ""'
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: tracing
+  namespace: castellan-ingress
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    name: castellan-ingress
+  frontend:
+    tracing:
+      backendRef:
+        name: solo-enterprise-telemetry-collector
+        namespace: agentgateway-system
+        kind: Service
+        port: 4317
+      protocol: GRPC
+      randomSampling: "true"
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: tracing
+  namespace: castellan-agents
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    name: agentgateway-waypoint
+  frontend:
+    tracing:
+      backendRef:
+        name: solo-enterprise-telemetry-collector
+        namespace: agentgateway-system
+        kind: Service
+        port: 4317
+      protocol: GRPC
+      randomSampling: "true"

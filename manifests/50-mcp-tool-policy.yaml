@@ -1,0 +1,50 @@
+# Tool-level authorization at the waypoint, in front of the castellan-ops MCP server.
+# Rules are OR-ed. A tool appears in tools/list and is callable only if some rule matches;
+# otherwise it is hidden AND tools/call is rejected. The MCP server never sees a denied call.
+#
+# Every rule requires:
+#   - the workload: source.identity.* from the mTLS peer certificate ztunnel presented (cryptographic).
+#   - the human's consent: every actor in the delegation chain (jwt.act.sub, jwt.act.act.sub) must be one of
+#     the agents the user authorized (jwt.authorized_agents, set by the IdP).
+#   - the human's role: jwt.roles from the STS-minted delegated token (verified by 51-mcp-jwt.yaml).
+# Clearance lookups belong to the specialist agent, and only when it was invoked through the assistant:
+# the chain in the token must read human -> castellan-assistant -> castellan-clearance.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: castellan-ops-tool-access
+  namespace: castellan-tools
+spec:
+  targetRefs:
+  - group: enterpriseagentgateway.solo.io
+    kind: EnterpriseAgentgatewayBackend
+    name: castellan-ops-mcp
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+          # assistant, read tier: contracts, for readers and admins
+          - >-
+            source.identity.namespace == "castellan-agents" &&
+            source.identity.serviceAccount == "castellan-assistant" &&
+            has(jwt.authorized_agents) && jwt.act.sub in jwt.authorized_agents &&
+            has(jwt.roles) && (jwt.roles.exists(r, r == "mcp.reader") || jwt.roles.exists(r, r == "mcp.admin")) &&
+            mcp.tool.name in ["list_contracts"]
+          # assistant, write + destructive tier: admins only
+          - >-
+            source.identity.namespace == "castellan-agents" &&
+            source.identity.serviceAccount == "castellan-assistant" &&
+            has(jwt.authorized_agents) && jwt.act.sub in jwt.authorized_agents &&
+            has(jwt.roles) && jwt.roles.exists(r, r == "mcp.admin") &&
+            mcp.tool.name in ["approve_access_request", "revoke_credentials"]
+          # clearance specialist: one tool, only inside the chain human -> assistant -> clearance, for readers and admins
+          - >-
+            source.identity.namespace == "castellan-agents" &&
+            source.identity.serviceAccount == "castellan-clearance" &&
+            has(jwt.authorized_agents) && jwt.act.sub in jwt.authorized_agents &&
+            has(jwt.act.act) && jwt.act.act.sub == "system:serviceaccount:castellan-agents:castellan-assistant" &&
+            jwt.act.act.sub in jwt.authorized_agents &&
+            has(jwt.roles) && (jwt.roles.exists(r, r == "mcp.reader") || jwt.roles.exists(r, r == "mcp.admin")) &&
+            mcp.tool.name in ["get_clearance_status"]

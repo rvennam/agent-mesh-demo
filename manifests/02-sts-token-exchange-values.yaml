@@ -1,0 +1,40 @@
+# agentgateway token service (STS, RFC 8693) on the control plane, port 7777.
+# Helm values for the enterprise-agentgateway chart; installed by scripts/02-agentgateway.sh.
+tokenExchange:
+  enabled: true
+  # Every token the STS mints carries this issuer. The waypoint trusts only this issuer on the MCP route.
+  issuer: enterprise-agentgateway.agentgateway-system.svc.cluster.local:7777
+  tokenExpiration: 1h
+
+  # Who may be the subject (the human): tokens signed by the corporate IdP (Keycloak here).
+  # The STS also accepts the tokens it minted itself, which is how a second agent exchanges again.
+  subjectValidators:
+  - validatorType: remote
+    remoteConfig:
+      url: http://keycloak.castellan-idp.svc.cluster.local:8080/realms/castellan/protocol/openid-connect/certs
+
+  # Who may be the actor (the agent): projected Kubernetes service-account tokens,
+  # verified offline against the API server's signing keys.
+  actorValidators:
+  - validatorType: k8s
+
+  # Claims carried from the human's token into the new token. By default only sub, scope and client_id are.
+  # roles drives the per-tool policy; authorized_agents is the human's consent, checked at the waypoint.
+  allowedSubjectClaims:
+  - email
+  - preferred_username
+  - name
+  - roles
+  - oid
+  - tid
+  - authorized_agents
+  # Claims carried from the agent's token, under act: its pod and service account.
+  allowedActorClaims:
+  - kubernetes.io
+
+  # Consent travels as authorized_agents instead of RFC 8693 may_act, which the ingress rescoping hop drops.
+  skipMayActClaimValidation: true
+
+  # Not used in this demo, but the controller requires a validator here or it crashloops.
+  apiValidators:
+  - validatorType: k8s

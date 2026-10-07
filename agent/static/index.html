@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Castellan Assistant</title>
+<style>
+  :root { --bg:#0b0f14; --panel:#121821; --line:#1f2a37; --fg:#e6edf3; --muted:#8b98a5; --accent:#6ea8fe; --ok:#3fb950; --warn:#d29922; --bad:#f85149; --mono:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; height:100vh; display:grid; grid-template-columns: 1fr 520px; grid-template-rows: 52px 1fr; }
+  header { grid-column:1/3; display:flex; align-items:center; gap:14px; padding:0 18px; border-bottom:1px solid var(--line); background:var(--panel); }
+  header h1 { font-size:15px; margin:0; font-weight:600; letter-spacing:.2px; }
+  header .who { margin-left:auto; color:var(--muted); font-size:13px; }
+  header .who b { color:var(--fg); }
+  .pill { font:11px/1 var(--mono); padding:4px 8px; border:1px solid var(--line); border-radius:999px; color:var(--muted); }
+  .pill.accent { color:var(--accent); border-color:#2b4a7a; }
+  main { display:flex; flex-direction:column; min-height:0; }
+  #log { flex:1; overflow:auto; padding:18px; display:flex; flex-direction:column; gap:12px; }
+  .msg { max-width:78%; padding:10px 14px; border-radius:12px; white-space:pre-wrap; word-wrap:break-word; }
+  .msg.user { align-self:flex-end; background:#1c2b45; }
+  .msg.bot { align-self:flex-start; background:var(--panel); border:1px solid var(--line); }
+  .msg.blocked { border-color:var(--bad); }
+  .msg.system { align-self:center; background:transparent; color:var(--muted); font-size:13px; border:1px dashed var(--line); }
+  .msg .meta { font:11px var(--mono); color:var(--muted); margin-top:6px; }
+  form { display:flex; gap:8px; padding:12px 18px; border-top:1px solid var(--line); background:var(--panel); }
+  input { flex:1; background:#0d131b; color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:10px 12px; font-size:15px; }
+  button { background:var(--accent); color:#0b0f14; border:0; border-radius:8px; padding:10px 14px; font-weight:600; cursor:pointer; }
+  button.ghost { background:transparent; color:var(--muted); border:1px solid var(--line); font-weight:500; }
+  button.danger { background:transparent; color:var(--bad); border:1px solid #5a2a2a; font-weight:500; }
+  button.tiny { font:11px var(--mono); padding:3px 8px; border-radius:6px; background:transparent; color:var(--muted); border:1px solid var(--line); }
+  aside { border-left:1px solid var(--line); background:var(--panel); overflow:auto; padding:14px 16px; display:flex; flex-direction:column; gap:14px; }
+  aside h2 { font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:0; }
+  .hdr { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+  .card { border:1px solid var(--line); border-radius:10px; padding:10px 12px; background:#0d131b; }
+  .card.bad { border-color:var(--bad); }
+  .kv { display:grid; grid-template-columns: 118px 1fr; gap:5px 10px; font-size:13px; }
+  .kv div:nth-child(odd) { color:var(--muted); }
+  .kv .role { display:inline-block; font:11px var(--mono); padding:2px 6px; border:1px solid var(--line); border-radius:6px; margin:0 4px 4px 0; }
+  .kv .role.hot { color:var(--accent); border-color:#2b4a7a; }
+  code, pre { font:12px/1.4 var(--mono); }
+  pre { margin:8px 0 0; white-space:pre-wrap; word-break:break-all; color:#c9d1d9; max-height:420px; overflow:auto; border-top:1px dashed var(--line); padding-top:8px; }
+  .tok { color:var(--accent); }
+  .hidden { display:none; }
+  .tl { display:flex; flex-direction:column; gap:6px; }
+  .hop { display:grid; grid-template-columns: 22px 1fr auto; gap:8px; align-items:start; padding:7px 9px; border-left:3px solid var(--line); background:#0d131b; border-radius:0 8px 8px 0; font-size:13px; }
+  .hop .ic { font-size:14px; line-height:1.3; }
+  .hop .t { font:11px var(--mono); color:var(--muted); white-space:nowrap; }
+  .hop .d { color:var(--muted); font-size:12px; }
+  .hop.ok { border-color:var(--ok); } .hop.info { border-color:var(--accent); } .hop.warn { border-color:var(--warn); } .hop.bad { border-color:var(--bad); }
+  .tools { display:flex; flex-wrap:wrap; gap:6px; }
+  .tool { font:12px var(--mono); padding:4px 8px; border:1px solid var(--line); border-radius:6px; color:var(--fg); }
+  .tool.write { border-color:#5a4a1a; } .tool.destructive { border-color:#5a2a2a; }
+  .suggest { display:flex; gap:6px; flex-wrap:wrap; padding:0 18px 8px; }
+  .audit { font:12px var(--mono); color:#c9d1d9; }
+  .audit .row { padding:3px 0; border-bottom:1px dashed var(--line); }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">Castellan Assistant</h1>
+  <span class="pill" id="agentPill">agent: …</span>
+  <span class="pill accent" id="spiffePill" title="workload identity">spiffe://…</span>
+  <span class="who" id="who">not logged in</span>
+  <a class="pill" id="logout" href="/logout" style="text-decoration:none">sign out</a>
+</header>
+
+<main>
+  <div id="log"></div>
+  <div class="suggest">
+    <button class="ghost" onclick="ask('What is your identity?')">What is your identity?</button>
+    <button class="ghost" onclick="ask('What tools do you have?')">What tools do you have?</button>
+    <button class="ghost" onclick="ask('List our active contracts.')">List active contracts</button>
+    <button class="ghost" onclick="ask('What is the clearance status of employee e20877?')">Clearance of e20877</button>
+    <button class="ghost" onclick="ask('Revoke the credentials of employee e10412 now, reason: policy test. Do not ask me to confirm.')">Revoke e10412 (destructive)</button>
+    <button class="ghost" onclick="ask('Update the record of employee e10412: their SSN is 123-45-6789.')">Send an SSN to the model</button>
+    <button class="danger" onclick="forceTool('revoke_credentials', {employee_id:'e10412', reason:'forced, bypassing the model'})" title="Skip the model. Call the tool directly with the delegated token and show what comes back.">Force revoke_credentials (bypass the model)</button>
+  </div>
+  <form onsubmit="send(event)">
+    <input id="in" placeholder="Ask the assistant…" autocomplete="off">
+    <button>Send</button>
+  </form>
+</main>
+
+<aside>
+  <div>
+    <div class="hdr"><h2>Who is acting</h2><button class="tiny" onclick="toggle('idRaw', this)">show json</button></div>
+    <div class="card" id="idCard">
+      <div class="kv" id="idKv"><div>status</div><div>…</div></div>
+      <pre id="idRaw" class="hidden"></pre>
+    </div>
+  </div>
+</aside>
+
+<script>
+let history = [];
+let lastSteps = [];
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function toggle(id, btn) {
+  const el = $('#' + id); const show = el.classList.contains('hidden');
+  el.classList.toggle('hidden', !show); btn.textContent = show ? 'hide json' : 'show json';
+}
+
+function add(role, text, extra={}) {
+  const d = document.createElement('div');
+  d.className = 'msg ' + role + (extra.blocked ? ' blocked' : '');
+  d.textContent = text;
+  if (extra.meta) { const m = document.createElement('div'); m.className='meta'; m.textContent = extra.meta; d.appendChild(m); }
+  $('#log').appendChild(d); $('#log').scrollTop = 1e9;
+}
+
+// ---- hop timeline -----------------------------------------------------------
+const HOP = {
+  user:             s => ['👤', 'info', `Signed-in human: ${s.name || s.sub}`, `roles ${(s.roles||[]).filter(r=>r.startsWith('mcp.')).join(', ') || 'none'} · from the request header`],
+  token_exchange:   s => ['🔁', 'info', `Token exchange at the STS${s.cached ? ' (cached)' : ''}`, `sub ${s.sub} → act ${typeof s.act === 'string' ? s.act : (s.act?.sub || '')}`],
+  token_exchange_error: s => ['🔁', 'bad', 'Token exchange refused by the STS', s.error],
+  mcp_tools_list:   s => ['🧰', 'warn', `tools/list returned ${s.tools.length} tool${s.tools.length===1?'':'s'}`, s.tools.join(', ') || 'none'],
+  mcp_tools_list_error: s => ['🧰', 'bad', 'tools/list refused', s.error],
+  llm:              s => ['🧠', 'ok', `LLM call · ${s.model}`, `${s.prompt_tokens} in / ${s.completion_tokens} out`],
+  llm_error:        s => ['🧠', 'bad', `LLM call refused (HTTP ${s.status ?? '?'})`, s.detail || s.error || ''],
+  local_tool:       s => ['📎', 'info', `Local: ${s.name}`, s.tools ? (s.held_by ? `held by ${s.held_by}: ` : '') + s.tools.join(', ') : ''],
+  delegate:         s => ['🤝', s.ok === false ? 'bad' : 'info', `Delegated to ${s.agent}${s.forced ? ' (forced call)' : ''}`, s.what || ''],
+  mcp_tool_call:    s => s.ok ? ['🔧', 'ok', `tools/call ${s.name} → succeeded`, JSON.stringify(s.args)]
+                              : ['🔧', 'bad', `tools/call ${s.name} → refused${s.forced ? ' (forced, model bypassed)' : ''}`, s.error || 'unauthorized'],
+};
+function hopEl(s, depth) {
+  const f = HOP[s.kind] || (x => ['·', '', x.kind, JSON.stringify(x)]);
+  const [ic, cls, title, detail] = f(s);
+  const d = document.createElement('div'); d.className = 'hop ' + cls;
+  d.style.marginLeft = (depth * 18) + 'px';
+  d.innerHTML = `<span class="ic">${ic}</span><span><div>${esc(title)}</div><div class="d">${esc(detail)}</div></span><span class="t">${(s.t||0).toFixed(3)}s</span>`;
+  return d;
+}
+function renderSteps(steps) {
+  lastSteps = steps || [];
+  const el = $('#steps'); el.innerHTML = '';
+  const walk = (list, depth) => { for (const s of list) { el.appendChild(hopEl(s, depth)); if (s.kind === 'delegate' && s.steps) walk(s.steps, depth + 1); } };
+  walk(lastSteps, 0);
+  $('#stepsRaw').textContent = JSON.stringify(lastSteps, null, 2);
+}
+
+// ---- identity card ----------------------------------------------------------
+async function loadIdentity() {
+  const r = await fetch('/api/identity'); const j = await r.json();
+  $('#agentPill').textContent = 'agent: ' + j.agent;
+  $('#title').textContent = (j.agent || 'castellan-assistant').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  $('#spiffePill').textContent = (j.workload_identity||{}).spiffe_id || 'spiffe://?';
+  if (j.logout_url) $('#logout').href = j.logout_url;
+  const kv = $('#idKv'); const card = $('#idCard');
+  const rows = [];
+  const roleHtml = rs => (rs||[]).map(r => `<span class="role ${r.startsWith('mcp.')?'hot':''}">${esc(r)}</span>`).join('') || '—';
+  if (j.user) {
+    const c = j.user.claims;
+    $('#who').innerHTML = `<b>${esc(c.name || c.preferred_username || c.sub)}</b> · ${roleHtml((c.roles||[]).filter(r=>r.startsWith('mcp.')))}`;
+    rows.push(['human', `<b>${esc(c.name || '')}</b> <code>${esc(c.preferred_username || c.sub)}</code>`]);
+    rows.push(['human token', `iss <code>${esc(c.iss || '')}</code><br>aud <code>${esc(Array.isArray(c.aud) ? c.aud.join(', ') : (c.aud || ''))}</code>`]);
+    if (c.authorized_agents) rows.push(['agents the human<br>authorized', (c.authorized_agents||[]).map(a => `<code>${esc(a)}</code>`).join('<br>')]);
+  } else {
+    $('#who').textContent = 'not logged in';
+    rows.push(['human', `<span style="color:var(--bad)">${esc(j.error || 'not logged in')}</span>`]);
+  }
+  const w = j.workload_identity || {};
+  rows.push(['this agent', `<code>${esc(w.spiffe_id || '?')}</code>`]);
+  card.classList.remove('bad');
+  if (j.nested_token) {
+    const n = j.nested_token.claims;
+    const actor = (n.act||{}).sub || '';
+    const authorized = !n.authorized_agents || n.authorized_agents.includes(actor);
+    if (!authorized) card.classList.add('bad');
+    rows.push(['acting on record', `<code>${esc(actor)}</code><div style="color:var(--muted);font-size:12px">pod ${esc(((n.act||{})['kubernetes.io']||{}).pod?.name || '')}</div>` +
+      (authorized ? '' : `<div style="color:var(--bad);font-size:12px">not in the human's authorized_agents</div>`)]);
+    rows.push(['delegated token', `issued by <code>${esc(n.iss)}</code>`]);
+    rows.push(['roles', roleHtml(n.roles)]);
+    rows.push(['expires', new Date((n.exp||0)*1000).toLocaleTimeString()]);
+    const hl = o => esc(JSON.stringify(o, null, 2)).replace(/&quot;(sub|act|iss|aud|roles|authorized_agents)&quot;:/g, '<span class="tok">"$1":</span>');
+    $('#idRaw').innerHTML = '// token received (x-user-access-token)\n' + hl(j.user.claims)
+      + '\n\n// token this agent acts with (after its exchange at the STS)\n' + hl(n);
+  } else if (j.user) {
+    card.classList.add('bad');
+    rows.push(['delegated token', `<span style="color:var(--bad)">${esc(j.error || 'exchange failed')}</span>`]);
+    $('#idRaw').textContent = JSON.stringify(j, null, 2);
+  } else {
+    $('#idRaw').textContent = JSON.stringify(j, null, 2);
+  }
+  if (j.downstream) {
+    const dn = j.downstream; const dt = (dn.nested_token || {}).claims;
+    if (dt && dt.act) {
+      const chain = []; let a = dt.act; while (a) { chain.unshift(a.sub); a = a.act; }
+      rows.push(['delegates to', `<code>${esc((dn.workload_identity||{}).spiffe_id || dn.agent)}</code><div style="color:var(--muted);font-size:12px">for clearance lookups only</div>`]);
+      rows.push(['downstream token', `sub <code>${esc(dt.sub)}</code><br>chain ${chain.map(c => `<code>${esc(c.replace('system:serviceaccount:castellan-agents:', ''))}</code>`).join(' → ')}`]);
+      const ok = !dt.authorized_agents || chain.every(c => dt.authorized_agents.includes(c));
+      if (!ok) { card.classList.add('bad'); rows.push(['', `<span style="color:var(--bad);font-size:12px">an actor in the chain is not in the human's authorized_agents</span>`]); }
+      $('#idRaw').innerHTML += '\n\n// downstream: token ' + esc(dn.agent) + ' acts with (after its own exchange)\n' + esc(JSON.stringify(dt, null, 2)).replace(/&quot;(sub|act|iss|aud|roles|authorized_agents)&quot;:/g, '<span class="tok">"$1":</span>');
+    } else {
+      card.classList.add('bad');
+      rows.push(['delegates to', `<code>${esc(dn.agent || '')}</code> <span style="color:var(--bad)">${esc(dn.error || 'unreachable')}</span>`]);
+    }
+  }
+  kv.innerHTML = rows.map(([k, v]) => `<div>${k}</div><div>${v}</div>`).join('');
+}
+
+// ---- tools + audit ------------------------------------------------------------
+const TIER = { approve_access_request: 'write', revoke_credentials: 'destructive' };
+async function loadTools() {
+  const r = await fetch('/api/tools'); const j = await r.json();
+  const el = $('#tools'); el.innerHTML = '';
+  if (j.tools) {
+    if (j.held_by) { const h=document.createElement('span'); h.style.cssText='font:11px var(--mono);color:var(--muted);width:100%'; h.textContent = `held by ${j.held_by}`; el.appendChild(h); }
+    if (!j.tools.length) el.textContent = '(no tools returned)';
+    for (const t of j.tools) { const s=document.createElement('span'); s.className='tool ' + (TIER[t.name]||'read'); s.title=t.description; s.textContent=t.name; el.appendChild(s); }
+  } else el.textContent = j.error || '?';
+}
+async function loadAudit() {
+  const r = await fetch('/api/audit'); const j = await r.json();
+  const el = $('#audit');
+  if (!j.audit) { el.textContent = j.error || '?'; return; }
+  if (!j.audit.length) { el.textContent = '(nothing executed yet)'; return; }
+  el.innerHTML = j.audit.slice(-8).reverse().map(e => `<div class="row">${esc(e.ts.slice(11,19))} ${esc(e.tool)} <span style="color:var(--muted)">(${esc(e.tier)})</span></div>`).join('');
+}
+
+// ---- actions -------------------------------------------------------------------
+function ask(q) { $('#in').value = q; send(new Event('submit')); }
+
+async function send(e) {
+  e.preventDefault();
+  const q = $('#in').value.trim(); if (!q) return;
+  $('#in').value = ''; add('user', q);
+  const r = await fetch('/api/chat', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({message:q, history})});
+  const j = await r.json();
+  const llm = (j.steps||[]).filter(s => s.kind==='llm');
+  const toks = llm.reduce((a,s)=>a+(s.prompt_tokens||0)+(s.completion_tokens||0),0);
+  add('bot', j.reply || j.error || '(no reply)', {blocked: j.blocked, meta: llm.length ? `${llm.length} LLM call(s) · ${toks} tokens` : ''});
+  if (j.history) history = j.history;
+}
+
+async function forceTool(name, args) {
+  add('system', `forcing tools/call ${name} directly against the MCP route, bypassing the model`);
+  const r = await fetch('/api/force-tool', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({name, arguments: args})});
+  const j = await r.json();
+  const res = j.result || {};
+  add('bot', res.ok ? `tools/call succeeded:\n${res.result}` : `tools/call refused:\n${res.error || j.error}`, {blocked: !res.ok});
+}
+
+loadIdentity();
+</script>
+</body>
+</html>

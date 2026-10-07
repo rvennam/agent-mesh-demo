@@ -1,0 +1,23 @@
+# The MCP route only accepts the STS-minted delegated token. The waypoint verifies it against the
+# STS JWKS, so `jwt.*` (sub = the human, act.sub = the agent, roles = Entra app roles) becomes
+# available to the per-tool CEL rules in 50-mcp-tool-policy.yaml.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: castellan-ops-require-delegated-token
+  namespace: castellan-tools
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: castellan-ops-mcp
+    sectionName: mcp
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      providers:
+      - issuer: enterprise-agentgateway.agentgateway-system.svc.cluster.local:7777
+        jwks:
+          remote:
+            url: http://enterprise-agentgateway.agentgateway-system.svc.cluster.local:7777/.well-known/jwks.json
+            cacheDuration: 5m

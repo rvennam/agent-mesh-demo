@@ -1,0 +1,19 @@
+# Budget enforcement on the LLM route. Scaffolding: it does nothing until a budget exists.
+# Budgets themselves are created in the Solo UI (Cost Management > Budgets) or with 61-llm-budget.yaml.
+# The controller discovers EnterpriseAgentgatewayBudget resources in this namespace and compiles them
+# into rate-limit configuration for the waypoint.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: llm-budget-enforcement
+  namespace: castellan-tools
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: llm-routes
+  traffic:
+    entBudgetEnforcement:
+      discovery:
+        namespaces:
+          from: Same

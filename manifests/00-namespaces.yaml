@@ -1,0 +1,28 @@
+# All three demo namespaces are in the ambient mesh. ztunnel gives every pod a
+# SPIFFE identity and mTLS with zero app changes; the agentgateway waypoint adds L7.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: castellan-agents
+  labels:
+    istio.io/dataplane-mode: ambient
+    # agent-to-agent calls go through a waypoint too (21-agents-waypoint.yaml)
+    istio.io/use-waypoint: agentgateway-waypoint
+    # No istio.io/ingress-use-waypoint: the ingress sends straight to the agents, so the agents' ztunnel
+    # reports castellan-ingress as the caller and the Solo UI service graph draws ingress -> agent.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: castellan-tools
+  labels:
+    istio.io/dataplane-mode: ambient
+    # every Service and ServiceEntry in this namespace gets the agentgateway waypoint
+    istio.io/use-waypoint: agentgateway-waypoint
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: castellan-ingress
+  labels:
+    istio.io/dataplane-mode: ambient

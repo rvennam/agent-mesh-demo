@@ -1,0 +1,88 @@
+# castellan-clearance: a specialist agent for ONE task, security clearance lookups. Same image as the
+# assistant, its own service account (spiffe://<CLUSTER_NAME>/ns/castellan-agents/sa/castellan-clearance).
+# The assistant calls it over the mesh with the assistant's delegated token; the specialist exchanges that
+# again, so the token it presents to the MCP server carries the whole chain: human -> assistant -> clearance.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: castellan-clearance
+  namespace: castellan-agents
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: castellan-clearance
+  namespace: castellan-agents
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: castellan-clearance
+  template:
+    metadata:
+      labels:
+        app: castellan-clearance
+    spec:
+      serviceAccountName: castellan-clearance
+      containers:
+      - name: agent
+        image: ${AGENT_IMAGE}
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: AGENT_NAME
+          value: castellan-clearance
+        - name: TRUST_DOMAIN       # Istio meshConfig.trustDomain; shown in the SPIFFE ID on the identity card
+          value: ${CLUSTER_NAME}
+        - name: POD_NAMESPACE
+          valueFrom: { fieldRef: { fieldPath: metadata.namespace } }
+        - name: SERVICE_ACCOUNT
+          valueFrom: { fieldRef: { fieldPath: spec.serviceAccountName } }
+        - name: USER_TOKEN_HEADER
+          value: "x-user-access-token"
+        - name: STS_WELL_KNOWN_URL
+          value: "http://enterprise-agentgateway.agentgateway-system.svc.cluster.local:7777/.well-known/openid-configuration"
+        - name: ACTOR_TOKEN_PATH
+          value: /var/run/secrets/tokens/sts-actor
+        - name: LLM_BASE_URL
+          value: "http://llm.castellan.internal/openai/v1"
+        - name: LLM_MODEL
+          value: gpt-4o-mini
+        - name: MCP_URL
+          value: "http://castellan-ops.castellan-tools.svc.cluster.local/mcp"
+        volumeMounts:
+        - name: sts-actor
+          mountPath: /var/run/secrets/tokens
+          readOnly: true
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+        resources:
+          requests:
+            cpu: 50m
+            memory: 192Mi
+      volumes:
+      - name: sts-actor
+        projected:
+          sources:
+          - serviceAccountToken:
+              path: sts-actor
+              expirationSeconds: 3600
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: castellan-clearance
+  namespace: castellan-agents
+  labels:
+    app: castellan-clearance
+spec:
+  selector:
+    app: castellan-clearance
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
+    appProtocol: http

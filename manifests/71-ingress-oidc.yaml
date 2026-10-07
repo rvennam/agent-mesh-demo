@@ -1,0 +1,65 @@
+# Login at the ingress (OIDC authorization code), enforced by the agentgateway ext-auth service.
+# On success the user's access token is placed in x-user-access-token; 72-ingress-rescope.yaml then swaps it
+# for an STS-issued token scoped to the agent before the request leaves the ingress. The agent never sees a password or refresh token; the session lives in the
+# ext-auth Redis, keyed by cookie.
+# issuerUrl is the in-cluster Keycloak URL: ext-auth discovers endpoints there, and Keycloak's dynamic
+# backchannel hands it in-cluster token/jwks URLs while the browser is redirected to localhost:8180.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: castellan-oauth
+  namespace: castellan-ingress
+type: extauth.solo.io/oauth
+stringData:
+  client-secret: "castellan-assistant-secret"
+---
+apiVersion: extauth.solo.io/v1
+kind: AuthConfig
+metadata:
+  name: castellan-login
+  namespace: castellan-ingress
+spec:
+  configs:
+  - oauth2:
+      oidcAuthorizationCode:
+        appUrl: "http://localhost:8080"
+        callbackPath: /callback
+        logoutPath: /logout
+        afterLogoutUrl: "http://localhost:8080/"
+        clientId: "castellan-assistant"
+        clientSecretRef:
+          name: castellan-oauth
+          namespace: castellan-ingress
+        issuerUrl: "http://keycloak.castellan-idp.svc.cluster.local:8080/realms/castellan"
+        scopes:
+        - profile
+        - email
+        session:
+          failOnFetchFailure: true
+          redis:
+            cookieName: castellan-session
+            options:
+              host: "ext-cache-enterprise-agentgateway.agentgateway-system.svc.cluster.local:6379"
+        headers:
+          # only the access token, and 72-ingress-rescope.yaml replaces even that with an STS-scoped one
+          accessTokenHeader: x-user-access-token
+---
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayPolicy
+metadata:
+  name: castellan-login
+  namespace: castellan-ingress
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    name: castellan-ingress
+  traffic:
+    entExtAuth:
+      authConfigRef:
+        name: castellan-login
+        namespace: castellan-ingress
+      backendRef:
+        name: ext-auth-service-enterprise-agentgateway
+        namespace: agentgateway-system
+        port: 8083

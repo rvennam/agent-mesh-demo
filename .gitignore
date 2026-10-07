@@ -1,0 +1,6 @@
+**/.venv/
+__pycache__/
+.ipynb_checkpoints/
+setup.yaml
+*.executed.ipynb
+.DS_Store

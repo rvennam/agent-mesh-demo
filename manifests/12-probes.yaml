@@ -1,0 +1,50 @@
+# Two curl pods used by the notebook to show the mesh identity half of every policy.
+#   probe  -> runs AS the agent (same service account => same SPIFFE ID)
+#   rogue  -> a different workload identity in the same namespace
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: probe
+  namespace: castellan-agents
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: probe
+  template:
+    metadata:
+      labels:
+        app: probe
+    spec:
+      serviceAccountName: castellan-assistant
+      containers:
+      - name: curl
+        image: curlimages/curl:8.10.1
+        command: ["sleep", "infinity"]
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rogue-agent
+  namespace: castellan-agents
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rogue
+  namespace: castellan-agents
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rogue
+  template:
+    metadata:
+      labels:
+        app: rogue
+    spec:
+      serviceAccountName: rogue-agent
+      containers:
+      - name: curl
+        image: curlimages/curl:8.10.1
+        command: ["sleep", "infinity"]

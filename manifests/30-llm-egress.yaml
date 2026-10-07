@@ -1,0 +1,79 @@
+# LLM egress through the waypoint.
+# The agent calls plain HTTP http://llm.castellan.internal/openai/v1/... with NO API key.
+# ztunnel sends the ServiceEntry's traffic to the waypoint; the waypoint routes /openai to an
+# AgentgatewayBackend that originates TLS to api.openai.com and injects the key from a Secret.
+# Budgets, prompt guards and GenAI telemetry attach here, outside the agent.
+apiVersion: networking.istio.io/v1
+kind: ServiceEntry
+metadata:
+  name: llm-castellan-internal
+  namespace: castellan-tools
+  labels:
+    istio.io/use-waypoint: agentgateway-waypoint
+spec:
+  hosts:
+  - llm.castellan.internal
+  location: MESH_EXTERNAL
+  ports:
+  - number: 80
+    name: http
+    protocol: HTTP
+  resolution: STATIC
+  endpoints:
+  - address: 240.0.0.10   # placeholder, never dialed: the waypoint's HTTPRoute overrides the destination
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: openai
+  namespace: castellan-tools
+spec:
+  ai:
+    provider:
+      openai:
+        model: gpt-4o-mini
+  policies:
+    auth:
+      secretRef:
+        name: openai-secret
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: llm-routes
+  namespace: castellan-tools
+spec:
+  parentRefs:
+  - group: networking.istio.io
+    kind: ServiceEntry
+    name: llm-castellan-internal
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /openai
+    backendRefs:
+    - name: openai
+      group: agentgateway.dev
+      kind: AgentgatewayBackend
+---
+# The real LLM provider, registered with the mesh so the service graph shows it as a named external
+# service (api.openai.com) instead of unregistered egress. The waypoint dials it directly (TLS from the
+# AgentgatewayBackend above); use-waypoint: none keeps this entry out of the waypoint path, so the
+# waypoint's own egress never loops back through itself.
+apiVersion: networking.istio.io/v1
+kind: ServiceEntry
+metadata:
+  name: openai-api
+  namespace: castellan-tools
+  labels:
+    istio.io/use-waypoint: none
+spec:
+  hosts:
+  - api.openai.com
+  location: MESH_EXTERNAL
+  ports:
+  - number: 443
+    name: tls
+    protocol: TLS
+  resolution: DNS

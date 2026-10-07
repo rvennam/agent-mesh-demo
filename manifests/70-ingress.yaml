@@ -1,0 +1,91 @@
+# North-south agentgateway ingress for the chat UI. Same control plane as the waypoint.
+# It terminates the HUMAN identity: the OIDC policy in 71-ingress-oidc.yaml runs the Entra
+# authorization-code flow here and forwards the user's token to the agent.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: castellan-ingress
+  namespace: castellan-ingress
+spec:
+  gatewayClassName: enterprise-agentgateway
+  infrastructure:
+    parametersRef:
+      group: enterpriseagentgateway.solo.io
+      kind: EnterpriseAgentgatewayParameters
+      name: castellan-ingress-params
+  listeners:
+  - name: http
+    protocol: HTTP
+    port: 8080
+    allowedRoutes:
+      namespaces:
+        from: Same
+  # the shadow agent, same login, reached on localhost:8081 (cookies are per host, not per port,
+  # so one sign-in covers both agents: same human, two workloads)
+  - name: shadow
+    protocol: HTTP
+    port: 8081
+    allowedRoutes:
+      namespaces:
+        from: Same
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: castellan-assistant
+  namespace: castellan-ingress
+spec:
+  parentRefs:
+  - name: castellan-ingress
+    sectionName: http
+  rules:
+  - backendRefs:
+    - name: castellan-assistant
+      namespace: castellan-agents
+      port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: shadow-assistant
+  namespace: castellan-ingress
+spec:
+  parentRefs:
+  - name: castellan-ingress
+    sectionName: shadow
+  rules:
+  - backendRefs:
+    - name: shadow-assistant
+      namespace: castellan-agents
+      port: 80
+---
+# Allow the ingress namespace's routes to target the agent Service across namespaces.
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: allow-ingress-to-agent
+  namespace: castellan-agents
+spec:
+  from:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    namespace: castellan-ingress
+  to:
+  - group: ""
+    kind: Service
+    name: castellan-assistant
+  - group: ""
+    kind: Service
+    name: shadow-assistant
+---
+# Keep the ingress private (ClusterIP). The demo reaches it via `kubectl port-forward` on
+# localhost:8080, which is also the only http:// redirect URI Entra accepts.
+apiVersion: enterpriseagentgateway.solo.io/v1alpha1
+kind: EnterpriseAgentgatewayParameters
+metadata:
+  name: castellan-ingress-params
+  namespace: castellan-ingress
+spec:
+  service:
+    spec:
+      type: ClusterIP
