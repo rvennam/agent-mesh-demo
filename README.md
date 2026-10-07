@@ -29,6 +29,25 @@ watch the effect in the browser.
 | Data guard | A prompt containing a Social Security Number never reaches the model. |
 | Evidence | The Solo UI shows each call with the workload, the user, the agent chain, the tool and the model. A service graph shows who talks to whom. |
 
+## Screenshots
+
+| | |
+|---|---|
+| ![Identity card with the raw tokens](docs/screenshot-v3-identity-json.png) | ![A forced tool call refused at the waypoint](docs/screenshot-v2-force-refused.png) |
+| **Who is acting.** The tokens behind the identity card: the rescoped user token, and the delegated token naming the agent. | **The model is not the control.** A tool call that skips the model is refused at the waypoint as an unknown tool. |
+| ![The shadow agent gets no tools](docs/screenshot-v2-shadow-refused.png) | ![A Social Security Number blocked before the model](docs/screenshot-v2-ssn-guard.png) |
+| **Unauthorized agent.** Same user, different agent: the card turns red and the agent gets no tools. | **Data guard.** A prompt with a Social Security Number is refused before it reaches the model. |
+| ![Budget exhausted in the chat](docs/screenshot-chat-budget-429.png) | ![Creating a budget in the Solo UI](docs/screenshot-solo-ui-create-budget.png) |
+| **Budget spent.** Once the agent's token budget is used up, LLM calls get a 429. | **Budgets in the Solo UI.** A per-agent token budget is a form in Cost Management. |
+| ![Cost Management dashboard](docs/screenshot-solo-ui-cost-management.png) | ![Tracing list in the Solo UI](docs/screenshot-solo-ui-tracing.png) |
+| **Cost tracking.** Cost Management counts tokens, requests and estimated spend for every LLM call. | **Every call traced.** The waypoints record each MCP and LLM call. |
+| ![One span with workload, user and agent](docs/screenshot-solo-ui-trace-detail.png) | ![A span showing the agent chain](docs/screenshot-v3-trace-chain.png) |
+| **Who did what.** One span carries the workload identity, the user, the agent and the tool. | **Agent-to-agent.** The clearance lookup's span shows the chain: assistant, then specialist. |
+| ![Prompt and completion on an LLM span](docs/screenshot-solo-ui-trace-prompt.png) | |
+| **What was asked.** LLM spans carry the prompt and the completion text. | |
+
+Some screenshots come from an earlier version of the chat UI with extra panels on the right. The behavior is the same.
+
 ## Architecture
 
 ![Architecture: users sign in through the agentgateway ingress; the assistant and the clearance specialist run in the Istio ambient mesh; the agentgateway waypoint enforces authorization, tool filtering, budgets, prompt guard and observability on the way to the MCP server and the LLM](docs/architecture.png)
