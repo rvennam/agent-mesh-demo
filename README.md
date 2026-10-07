@@ -40,13 +40,11 @@ watch the effect in the browser.
 | ![Budget exhausted in the chat](docs/screenshot-chat-budget-429.png) | ![Creating a budget in the Solo UI](docs/screenshot-solo-ui-create-budget.png) |
 | **Budget spent.** Once the agent's token budget is used up, LLM calls get a 429. | **Budgets in the Solo UI.** A per-agent token budget is a form in Cost Management. |
 | ![Cost Management dashboard](docs/screenshot-solo-ui-cost-management.png) | ![Tracing list in the Solo UI](docs/screenshot-solo-ui-tracing.png) |
-| **Cost tracking.** Cost Management counts tokens, requests and estimated spend for every LLM call. | **Every call traced.** The waypoints record each MCP and LLM call. |
+| **Cost tracking.** Cost Management counts tokens, requests and estimated spend for every LLM call, using the demo's inflated model prices. | **Every call traced.** The waypoints record each MCP and LLM call. |
 | ![One span with workload, user and agent](docs/screenshot-solo-ui-trace-detail.png) | ![A span showing the agent chain](docs/screenshot-v3-trace-chain.png) |
-| **Who did what.** One span carries the workload identity, the user, the agent and the tool. | **Agent-to-agent.** The clearance lookup's span shows the chain: assistant, then specialist. |
-| ![Prompt and completion on an LLM span](docs/screenshot-solo-ui-trace-prompt.png) | |
-| **What was asked.** LLM spans carry the prompt and the completion text. | |
-
-Some screenshots come from an earlier version of the chat UI with extra panels on the right. The behavior is the same.
+| **Who did what.** One span carries the workload identity, the user, the agent and the tool. | **Agent-to-agent.** The clearance lookup is called by the specialist (`src.identity`), for the user, with the agent chain recorded on the span. |
+| ![Prompt and completion on an LLM span](docs/screenshot-solo-ui-trace-prompt.png) | ![Service graph, infrastructure view](docs/screenshot-mesh-graph-workloads.png) |
+| **What was asked.** LLM spans carry the prompt and the completion text. | **Service graph.** The Istio view: ingress to the agents, the agents' waypoint, the clearance specialist, and the tools waypoint in front of the MCP server. |
 
 ## Architecture
 
@@ -113,7 +111,7 @@ browser.
 | Chat | http://localhost:8080 | Sign in as `avery.analyst` (role `mcp.reader`) or `morgan.admin` (role `mcp.admin`). The password for both is `Castellan-Demo-2026`. **sign out** in the header switches users. |
 | Shadow agent | http://localhost:8081 | Same login, a different agent that no user authorized. |
 | Solo UI | http://localhost:4000/age/ | Tracing, Cost Management (budgets, model cost catalog), Gateways, Policies. |
-| Service graph | http://localhost:4000/ie/graph | The Istio view of the same Solo UI. Group by **Workload**. |
+| Service graph | http://localhost:4000/ie/graph | The Istio view of the same Solo UI. Group by **Workload**, and set Topology to **Infrastructure** to see the ingress and the waypoints. |
 
 The settings, including the cluster name (`CLUSTER_NAME`, default `agent-mesh`), live in
 `scripts/00-env.sh`. They can be overridden from your shell.
