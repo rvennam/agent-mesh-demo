@@ -31,20 +31,9 @@ watch the effect in the browser.
 
 ## Architecture
 
-```mermaid
-flowchart LR
-  U[User browser] -->|OIDC login| IN[agentgateway ingress]
-  IN -->|rescoped token| A[castellan-assistant]
-  A -->|delegates one task| C[castellan-clearance]
-  A -. token exchange .-> STS[agentgateway token service]
-  C -. token exchange .-> STS
-  A -->|MCP| WT[agentgateway waypoint<br/>castellan-tools]
-  C -->|MCP| WT
-  WT -->|per-tool policy| M[castellan-ops MCP server]
-  A -->|LLM| WT
-  WT -->|budget, key injection, data guard| LLM[OpenAI]
-  KC[Keycloak] --- IN
-```
+![Architecture: users sign in through the agentgateway ingress; the assistant and the clearance specialist run in the Istio ambient mesh; the agentgateway waypoint enforces authorization, tool filtering, budgets, prompt guard and observability on the way to the MCP server and the LLM](docs/architecture.png)
+
+The diagram shows two LLM providers. The demo as shipped routes to OpenAI only.
 
 Namespaces:
 
